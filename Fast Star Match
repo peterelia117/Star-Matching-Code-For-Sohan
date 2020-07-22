@@ -1,0 +1,113 @@
+import matplotlib.pyplot as plt
+import numpy as np
+import math
+import os
+
+os.chdir('C:\\Users\\Celia\\Documents')
+
+k = 0
+i=0
+
+def dataread(filename,xCol,yCol,bCol,vCol,hours,minutes,seconds,deg,arcmin,arcsec):
+    with open(filename) as f:
+        lines = f.readlines()
+        x = [float(line.split()[xCol]) for line in lines] 
+        y = [float(line.split()[yCol]) for line in lines] 
+        bMag = [float(line.split()[bCol]) for line in lines]
+        vMag = [float(line.split()[vCol]) for line in lines]
+        ra = [((float(line.split()[hours])) + (float(line.split()[minutes])/60) + ((float(line.split()[seconds]))/ 3600))*15 for line in lines]
+        dec = [float(line.split()[deg]) + math.copysign(1,float(line.split()[deg]))*(float(line.split()[arcmin]))/(60) + math.copysign(1,float(line.split()[deg]))*(float(line.split()[arcsec]))/(3600) for line in lines]
+    return x,y,bMag,vMag,ra,dec,#raHours,raMin,raSec,decDeg,decMin,decSec
+
+def RaDecRead(filename,raCol,decCol,pxCol,pmraCol,pmdecCol,v_radCol):
+    with open(filename) as f:
+        lines = f.readlines()
+        ra = [float(line.split()[raCol]) for line in lines] 
+        dec = [float(line.split()[decCol]) for line in lines]
+        px = [float(line.split()[pxCol]) for line in lines]
+        pmra = [float(line.split()[pmraCol]) for line in lines]
+        pmdec = [float(line.split()[pmdecCol]) for line in lines]
+        v_rad = [float(line.split()[v_radCol]) for line in lines] 
+    return ra,dec,px,pmra,pmdec,v_rad
+
+def decMatch(phot_DEC,gaia_DEC,i,j,error):
+    if (phot_DEC[i] < (gaia_DEC[j] + error)) and (phot_DEC[i] > (gaia_DEC[j] - error)):
+        return True
+    else:
+        return False
+
+def naiveStarMatch(phot_RA,phot_DEC,gaia_RA,gaia_DEC,phot_V,phot_B,a,z,i,error):
+    for h in range(a,z):
+        if (phot_RA[i] < ((gaia_RA[h]) + error)) and (phot_RA[i] > ((gaia_RA[h])-error)) and (phot_DEC[i] < ((gaia_DEC[h]) + error)) and (phot_DEC[i] > ((gaia_DEC[h])-error)):
+            return True
+        else:
+            return False
+        
+def starMatch(phot_RA,phot_DEC,gaia_RA,gaia_DEC,phot_B,phot_V,matchB,matchV,matchRA,matchDEC,a,z,error,j,i): #when you first call it, a and z should be the start and end of the gaia array. They set the bounds of the partition.
+    #for i in range(0,len(phot_RA)-1): #might try a while condition     
+        #j = i
+    global k
+    if (abs(a - z) <= 10): #if the partition you start with is small enough, just look through it naively
+       if (naiveStarMatch(phot_RA,phot_DEC,gaia_RA,gaia_DEC,phot_V,phot_B,a,z,i,error)==True) and (k < len(matchDEC)):
+           matchB[k] = phot_B[i]
+           matchV[k] = phot_V[i]
+           matchRA[k] = gaia_RA[j]
+           matchDEC[k] = gaia_DEC[j]
+           k = k + 1
+           #print('match!')
+           #print(phot_B[i])
+           #print(matchB[k])
+    elif (phot_RA[i] < (gaia_RA[j] + error)) and (phot_RA[i] > (gaia_RA[j] - error)): #if the RA matches, 
+        if (decMatch(phot_DEC,gaia_DEC,i,j,error)==True) and (k < len(matchDEC)):                             #check the DEC.
+            matchB[k] = phot_B[i]
+            matchV[k] = phot_V[i]
+            matchRA[k] = gaia_RA[j]
+            matchDEC[k] = gaia_DEC[j]
+            k = k + 1
+            #print('match!')
+            #print(phot_B[i])
+            #print(matchB[k])            
+    elif (phot_RA[i] > gaia_RA[j]) and (a <= z) and not (phot_RA[i] > gaia_RA[len(gaia_RA)-1]): #if it's not a match but phot_RA is greater than gaia_RA, search only in that upper part.
+        a = j + 1
+        j = int(np.floor((a+z)/2))
+        starMatch(phot_RA,phot_DEC,gaia_RA,gaia_DEC,phot_B,phot_V,matchB,matchV,matchRA,matchDEC,a,z,error,j,i)
+    elif (phot_RA[i] < gaia_RA[j]) and (z >= a) and not (phot_RA[i] < gaia_RA[0]): #same but in the case that phot_RA is less than gaia_RA.
+        z = j - 1
+        j = int(np.floor((a+z)/2))
+        starMatch(phot_RA,phot_DEC,gaia_RA,gaia_DEC,phot_B,phot_V,matchB,matchV,matchRA,matchDEC,a,z,error,j,i)
+    #print(j)
+    #elif (k > len(matchRA)-1):
+    
+##        elif (z = gaia_RA[0]) or (a = gaia_RA[len(gaia_RA)-1]):
+##        i = i + 1
+#gaiaRADEC = RaDecRead('gaia small cut.txt',0,1,2,3,4,5)
+gaiaRADEC = RaDecRead('pandasSortCoord2.txt',0,1,2,3,4,5)
+testArray = dataread('OmegaCen2ndRACut.txt',1,2,6,9,22,23,24,25,26,27)
+#testArray = dataread('OmegaCenNGC5139.dat - Copy.txt',1,2,6,9,22,23,24,25,26,27)
+#testArray = dataread('StetsonOmegaCenRAcut.txt',1,2,6,9,22,23,24,25,26,27)
+clusterMembersB = np.zeros(len(gaiaRADEC[1]))
+clusterMembersV = np.zeros(len(gaiaRADEC[1]))
+clusterMembersRA = np.zeros(len(gaiaRADEC[1]))
+clusterMembersDEC = np.zeros(len(gaiaRADEC[1]))
+err = .0005
+#print(gaiaRADEC[0])
+for i in range(0,len(testArray[4])-1):
+    j = 0
+    #for j in range(0,len(
+#for i in range(0,len(gaiaRADEC[0])-1):
+#while(q<(len(clusterMembersRA)-1)):
+    starMatch(testArray[4],testArray[5],gaiaRADEC[0],gaiaRADEC[1],testArray[2],testArray[3],clusterMembersB,clusterMembersV,clusterMembersRA,clusterMembersDEC,0,len(gaiaRADEC[0])-1,err,j,i)
+    #print(clusterMembersB[i])
+    #i = i+1
+
+bMinusV = np.zeros(len(clusterMembersB)-1)
+justV = np.zeros(len(clusterMembersV)-1)
+for i in range(0,len(clusterMembersV)-1):
+    bMinusV[i] = clusterMembersB[i] - clusterMembersV[i]
+    justV[i] = clusterMembersV[i]
+fig, ax = plt.subplots()
+ax.scatter(bMinusV,justV,c='r',s=1)
+ax.set_xlim([-2.25,3.5])
+ax.set_ylim([5,25])
+plt.gca().invert_yaxis()
+plt.show()
